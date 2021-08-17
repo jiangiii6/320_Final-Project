@@ -1,0 +1,401 @@
+---
+title: "Diamonds Price Analysis"
+author: "By Xuewei Ji and Zhixin Jiang"
+date: "5/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr) 
+library(ggplot2) 
+library(tidyverse)
+library(rvest)
+library(broom)
+library(pracma)
+library(cvTools)
+library(corrplot)
+```
+<h1>Diamond Data Science Tutorial </h1>
+
+Every woman longs for a diamond of her own. As a lady group, we decided to use diamond data as our analysis topic. In this tutorial, we will show how to look at existing data of diamonds. We will use the visualization tool to analyze data to see how diamond features correlate diamond prices. Then we will train several models to predict diamonds price. Finally, we will create cross-validation to see the performance of the models. By working on this project, we desire to consolidate the knowledge of data science we learn this semester. Also, we wish to have a deeper understanding of data science and statistics after we accomplish this final project.
+
+<h1>1.Data Collection</h1>
+We found this interesting topic and download data from https://www.kaggle.com/shivam2503/diamonds. Below is the definition of the columns in the dataset.
+
+price price in US dollars (\$326--\$18,823)
+
+carat weight of the diamond (0.2--5.01)
+
+cut quality of the cut (Fair, Good, Very Good, Premium, Ideal)
+
+color diamond colour, from J (worst) to D (best)
+
+clarity a measurement of how clear the diamond is (I1 (worst), SI2, SI1, VS2, VS1, VVS2, VVS1, IF (best))
+
+x length in mm (0--10.74)
+
+y width in mm (0--58.9)
+
+z depth in mm (0--31.8)
+
+depth total depth percentage = z / mean(x, y) = 2 * z / (x + y) (43--79)
+
+table width of top of diamond relative to widest point (43--95)
+
+```{r warning=FALSE}
+#get data and show data content
+diamonds <- read.csv('diamonds.csv')
+diamonds %>% head(10)
+```
+
+<h1>2. Data Tidying </h1>
+We want to remove some incorrect data from the original dataset. In this dataset, we need to check whether the value of x,y, or z is 0. If so we should remove these data from our analysis. The below code gets the total amount of invalid data we should remove.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+diamonds_invalid <- diamonds %>%filter(x==0 |y==0 | z==0)
+nrow(diamonds_invalid) 
+```
+
+There are 20 lines with invalid x,y, or z value. Compare the total rows of the dataset, 20 rows are not too many and should not affect the final analysis result. Below codel removes them from the original dataset.
+
+```{r warning=FALSE}
+diamonds<- diamonds %>%
+  filter(! (x==0 |y==0 | z==0))
+```
+
+<h1>3. Data Analysis Of Diamond Amount Distribution</h1>
+
+We have clean data now. In this step, we want to have a basic overview of diamonds amounts distribution by different factors. We want to put cut, clarity, and color into one bar plot because these factors are all classification factors. This will help us to understand the data better.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+diamonds %>%
+  ggplot(aes(x = color, fill = clarity)) +
+  geom_bar(position = "stack") +
+  xlab("Color") +
+  ylab("Total Amount") +
+  theme(legend.position="right") +
+  ggtitle("diamonds amount by factors") +
+  scale_fill_discrete("Clarity") +
+  facet_grid(~ cut)
+```
+
+From the plot, we can see the Ideal cut takes the most amount of diamonds. The amount of premium and very good are at the same level. This plot is not very clear to show the amount of clarity and color. We will use 3 histogram charts to show amounts by each factor.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+diamonds %>%
+  ggplot(aes(x = color)) +
+  geom_bar(position = "stack")+
+  ggtitle("diamonds amount by color") 
+
+diamonds %>%
+  ggplot(aes(x = clarity)) +
+  geom_bar(position = "stack")+
+  ggtitle("diamonds amount by clarity") 
+
+diamonds %>%
+  ggplot(aes(x = cut)) +
+  geom_bar(position = "stack")+
+  ggtitle("diamonds amount by cut") 
+```
+
+From the histogram charts, we can see that the diamonds with the best clarity level are very rare. The clarity level is SI1, SI2, VS1, and VS2 for most of the diamonds. How will these factors affect the diamonds price is the next question we want to analyze. 
+
+<h1>4. Data Analysis Of Diamond Price With Different Factors</h1>
+<h2>4.1 Catorical Factors Analysis</h2>
+There are 3 categorical factors in this dataset: cut, color and clarity. Now we want to see how these 3 factors correlate to diamond prices. We create density plots to see the distribution of price by factors. In common sense, the big diamonds will have an expensive price. In order to exclude the influence of big diamonds, we only check diamonds which are than 2 carats.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+#get diamond data set less than 2 carat
+small_diamonds<- diamonds %>% 
+  filter(carat<=2)
+#create density plot
+small_diamonds %>% 
+  ggplot( aes(x=price,color = color)) + 
+  geom_density()+
+  ggtitle("price density vs color") 
+
+small_diamonds %>% 
+  ggplot( aes(x=price,color = cut)) + 
+  geom_density()+
+  ggtitle("price density vs cut") 
+
+small_diamonds %>% 
+  ggplot( aes(x=price,color = clarity)) + 
+  geom_density()+
+  ggtitle("price density vs clarity") 
+
+```
+
+From the density chart, we can see these categorical factors have influenced price distribution but it is not obvious. In order to view the distribution more clear, we create boxplot geometries for prices vs 3 different factors. We can graphically depict groups of numerical data through their quartiles. Outliers are shown individually, which will help us understand the data we're working on:
+
+```{r warning=FALSE}
+options(expressions= 500000)
+#create box plot
+small_diamonds %>%
+  ggplot(mapping=aes(x=color, y=price,color = color)) +
+    geom_boxplot()+
+     ggtitle("price vs color") 
+small_diamonds %>%
+  ggplot(mapping=aes(x=cut, y=price,color = cut)) +
+    geom_boxplot()+
+     ggtitle("price vs cut") 
+small_diamonds %>%
+  ggplot(mapping=aes(x=clarity, y=price,color = clarity)) +
+    geom_boxplot()+
+     ggtitle("price vs clarity") 
+```
+
+From the boxplot of 3 factors, we can see the cut and clarity significantly affect the price of the diamonds. But the significance of color is not obvious. So we decide to exclude factor color from our further analysis.
+
+Besides the conclusion we made from boxplot, there is one more concern. There are many outliers in plot box result, which could affect our accuracy when building a model.
+
+<h2>4.2 Numeric Factors Analysis</h2>
+
+Now we want to see the numeric factors which may affect the diamond price. First, we create a scatter plot to check the price by different numeric factors.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+diamonds %>% 
+  select_if(function(x) is.numeric(x)) %>% 
+  gather(key = key, 
+         value = value, 
+         carat, 
+         depth, 
+         table, 
+         x, 
+         y, 
+         z) %>% 
+  ggplot(aes(value, price)) + 
+  geom_bin2d(bins = 50) + 
+  guides(fill = F) +
+  facet_wrap(~ key, scales = 'free') + 
+  labs(title = 'Price vs other variables')
+```
+
+From the plot, we can see that the price of diamonds will increase when carat, x,y, or z increase. So we assume the factors carat, x, y, and z are correlated to price. In order to validate our assumption, we create a correlation matrix for all numeric variables. 
+
+```{r warning=FALSE}
+options(expressions= 500000)
+diamonds_cor <- diamonds %>% 
+  select(price,carat,depth,table,x,y,z)
+res <- cor(diamonds_cor)
+round(res, 2)
+corrplot(res, method = "number") 
+```
+
+From the correlation matrix, the correlation values of price to carat, x, y, and z are 0.92,0.88,0.87 and 0.86. We can conclude that the diamonds price is significantly correlated to carat, x, y, and z. The result is the same as the plot we created earlier. So we will include these 4 numeric factors in our model.
+
+<h1>5. Train Linear Regression Model with original data</h1>
+
+Based on previous analysis, we will build a linear regression model by using factor carat, x, y, z, cut, and clarity. Then we will check the F test, standard error and P-value to see whether this model is well trained. 
+
+```{r warning=FALSE}
+#build linear regression model
+options(expressions= 500000)
+diamonds_fit <-lm(price~ carat+x+y+z+cut+ clarity, data=diamonds)
+diamonds_fit_stats <- diamonds_fit %>%
+  tidy()
+diamonds_fit_stats %>% knitr::kable()
+```
+
+From the statistic test result, the F test value is greater enough than 1, and p-value is 0. The standard error for every factor is also not big. So we can believe this model is well trained. Now we use the glance function to see more statics value in this model.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+diamonds_fit %>% 
+  glance() %>%
+  select(r.squared, sigma, statistic, df, p.value) %>%
+  knitr::kable()
+```
+
+From the result of the glance function, we can see the residual is near 0.9. That is a good result.
+
+In order to validate if this model fits linear regression, we can check whether residual is normally distributed, which means whether it's center around 0.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+augmented_diamonds <- diamonds_fit %>%
+  augment()
+augmented_diamonds %>%
+  ggplot(aes(x=.fitted,y=.resid)) +
+    geom_point() + 
+    geom_smooth() +
+    labs(title="diamonds price residuals over carat",x="fitted", y="residual")
+```
+
+From the residual plot, we can see the shape of residual not normal distributed. So even though the p-value and other test results are good, we still need to improve our model. Our next goal is to adjust the model to see if we can get it better. One way we can do is to transform our original data. We decide to transform the original data to log and build the new model.
+
+<h1>6. Train Linear Regression Model with transformed data</h1>
+
+We use a log to transform numeric factors from original data. Then we build some statistic analysis which we did before with the original dataset. 
+
+```{r warning=FALSE}
+options(expressions= 500000)
+#build new data set for transformed data
+diamonds_transformed <- diamonds %>% 
+  mutate(carat = log(carat), 
+         table = log(table), 
+         x = log(x + 1), 
+         y = log(x + 1), 
+         z = log(x + 1))
+
+diamonds_transformed$price_log <- log(diamonds_transformed$price)
+#correlation matrix for transmored numeric data
+diamonds_cor <- diamonds_transformed %>% 
+  select(price_log,carat,depth,table,x,y,z)
+res <- cor(diamonds_cor)
+round(res, 2)
+corrplot(res, method = "number") 
+
+#check how category factors significant with transformed data
+small_diamonds_transformed<- diamonds_transformed %>% 
+  filter(carat<=2)
+small_diamonds_transformed %>%
+  ggplot(mapping=aes(x=color, y=price_log,color = color)) +
+    geom_boxplot()+
+     ggtitle("price vs color  with log transformed data") 
+small_diamonds_transformed %>%
+  ggplot(mapping=aes(x=cut, y=price_log,color = cut)) +
+    geom_boxplot()+
+     ggtitle("price vs cut  with log transformed data") 
+small_diamonds_transformed %>%
+  ggplot(mapping=aes(x=clarity, y=price_log,color = clarity)) +
+    geom_boxplot()+
+     ggtitle("price vs clarity with log transformed data") 
+
+```
+
+From the analysis above, the correlation of price to carat, x, y, and z are 0.97.0.97,0.97 and 0.97. That means after data transformation, the numeric factors are more correlated to price than the model created with original data. This is a positive signal for us to use log-transformed data to build a model.
+
+From the boxplot of categorical factors with transformed data, we can see the outliers almost disappeared, which means these factors are more reliable. Moreover, when we analyzed the original data, we did not see an obvious significance for the color factor. But now from color boxplot with transformed data, we can see the significance now. So in order to validate whether the color is a significant factor, we decide to build two models with transformed data. In the first model, we will exclude color, in the second one we will include color factor.
+
+<h2>6.1 Train Linear Regression Model with transformed data without color factor</h2>
+
+Now we will build the first transformed model without color factor. We also get the test result and residual plot to see whether the model fits well.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+#transformed data model with out color
+diamonds_transformed_fit <-lm(price_log~ carat+x+y+z+cut+ clarity, data=diamonds_transformed)
+diamonds_transformed_fit_stats <- diamonds_transformed_fit %>%
+  tidy()
+#statistics result for model
+diamonds_transformed_fit_stats %>% knitr::kable()
+
+diamonds_transformed_fit %>% 
+  glance() %>%
+  select(r.squared, sigma, statistic, df, p.value) %>%
+  knitr::kable()
+#residual plot
+
+augmented_diamonds_fit <- diamonds_transformed_fit %>%
+  augment()
+augmented_diamonds_fit %>%
+  ggplot(aes(x=.fitted,y=.resid)) +
+    geom_point() + 
+    geom_smooth() +
+    labs(title="diamonds price model residuals with transformed data without color",x="fitted", y="residual")
+
+```
+
+From the result we can see the r squared is about 0.97, which is a better model than what we created with original data. Moreover, from this plot, we can see the residuals are center near 0. It is normal distribution. We can trust this training model fits linear regression.
+
+<h2>6.2 Build Linear Regression Model with transformed data with color factor</h2>
+
+Now we will build the first transformed model with color factor. We also get the test results and residual plots to see whether the model fits well.
+
+```{r warning=FALSE}
+options(expressions= 500000)
+#transformed data model with out color
+diamonds_transformed_color_fit <-lm(price_log~ carat+x+y+z+cut+ clarity+color, data=diamonds_transformed)
+diamonds_transformed_color_fit_stats <- diamonds_transformed_color_fit %>%
+  tidy()
+#statistics result for model
+diamonds_transformed_color_fit_stats %>% knitr::kable()
+
+diamonds_transformed_color_fit %>% 
+  glance() %>%
+  select(r.squared, sigma, statistic, df, p.value) %>%
+  knitr::kable()
+#residual plot
+augmented_diamonds_color_fit <- diamonds_transformed_color_fit %>%
+  augment()
+augmented_diamonds_color_fit %>%
+  ggplot(aes(x=.fitted,y=.resid)) +
+    geom_point() + 
+    geom_smooth() +
+    labs(title="diamonds price model residuals with transformed data with color",x="fitted", y="residual")
+```
+
+From the result we can see that the r squared, the standard deviation in this model are better than the model we build without factor. We will get more positive evidence to support our conclusion when we build cross-validation the in next step.
+
+<h1>7.Model Validation ：5 folds Cross Validation</h1>
+
+In this step, we want to validate the accuracy of our models. We want to create a 5 folds cross-validation for 3 models we trained in steps 5 and 6. We use the accuracy rate as criteria of whether the model is good. In this step, we define the accuracy rate as 1- abs(predict_price-price)/price. We will get 5 accuracy rates for each of the models.
+
+```{r  warning=FALSE}
+  options(expressions= 500000)
+  original_fold_indices <- cvFolds(n=nrow(diamonds), K=5)
+  transformed_fold_indices <- cvFolds(n=nrow(diamonds_transformed), K=5)
+  accuracy_rates <- sapply(1:5, function(fold_index) {
+  #original data test
+  original_test_indices <- which(original_fold_indices$which == fold_index)
+  original_test_set <- diamonds[original_test_indices,]
+  original_train_set <- diamonds[-original_test_indices,]
+  original_fit <- lm(price~ carat+x+y+z+cut+ clarity, data=original_train_set)
+  original_test_set$price_predit <- predict(original_fit, original_test_set)
+  original_test_set$accuracy <-     1-abs(original_test_set$price_predit-original_test_set$price)/original_test_set$price
+  original_accuracy <- mean(original_test_set$accuracy)
+  
+  # transformed data test without color
+  transformed_test_indices <- which(transformed_fold_indices$which == fold_index)
+  transformed_test_set <- diamonds_transformed[transformed_test_indices,]
+  transformed_train_set <- diamonds_transformed[-transformed_test_indices,]
+  transformed_fit <- lm(price_log~ carat+x+y+z+cut+ clarity, data=transformed_train_set)
+  transformed_test_set$pred <- predict(transformed_fit, transformed_test_set)
+  transformed_test_set$price_predit <- exp(1)^transformed_test_set$pred
+  transformed_test_set$accuracy <-     1-abs(transformed_test_set$price_predit-transformed_test_set$price)/transformed_test_set$price
+  transformed_accuracy <- mean(transformed_test_set$accuracy)
+  
+   # transformed data test with color
+  transformed_color_fit <- lm(price_log~ carat+x+y+z+cut+ clarity+color, data=transformed_train_set)
+  transformed_test_set$pred_color <- predict(transformed_color_fit, transformed_test_set)
+  transformed_test_set$price_predit_color <- exp(1)^transformed_test_set$pred_color
+  transformed_test_set$accuracy_color <-     1-abs(transformed_test_set$price_predit_color-transformed_test_set$price)/transformed_test_set$price
+  transformed_accuracy_color <- mean(transformed_test_set$accuracy_color)
+ 
+  c(original_accuracy, transformed_accuracy,transformed_accuracy_color)
+  })
+
+  rownames(accuracy_rates) <- c("original data accuracy ", "transformed data without color accuracy", "transformed data with color accuracy")
+  accuracy_rates <- as.data.frame(t(accuracy_rates))
+  accuracy_rates$fold <- seq.int(nrow(accuracy_rates))
+  accuracy_rates %>%  knitr::kable()
+```
+
+From the cross-validation result, we can see the accuracy rate for 3 models are around 65%,85%, and 89%. So the linear regression model with transformed data includes color factor has the best accuracy.
+
+<h1>8. Summary and Discussion</h1>
+
+The best accuracy of the model we build is 89%. Even though from the statistic result the model fits linear regression, it is reluctant to say this model is good enough.
+
+We believe there are more spaces to improve our model. There should be some more factors and analyses we overlooked during our working process. For example, in the beginning, we analyzed the amount distribution of 3 categorical factors. Is it possible the total diamond amount of different cut or clarity could be a potential factor that could affect the diamond price? If so, how to build a dummy factor to represent this feature?
+
+When we built the model, we originally planned to create a dummy variable for 3 categorical factors to replace 3 individual factors. But the result of the model is not as good as we use 3 factors separately. So how to decide in which situation we need to use a dummy variable? This issue is worth discussing in future studies.
+
+Also when we included categorical factors into the linear regression model, we also tried to build a model with numeric factor * categorical factor instead of numeric factor + categorical factor. But the result is worse. I think as we have more experience and more knowledge of data science and statistics, we will have a better understanding of why we cannot use multiplication to build a model here.
+
+During this project, we gained more experience about how to analyzing data. Also, we have a deeper understanding of data since the knowledge we learned this semester. We keep exploring data, making an assumption, and questioning our assumption. Also during the project, we realized the importance of teamwork and discussion. A good result cannot leave with discussion.  
+
+<h1>9. Reference</h1>
+
+https://www.rdocumentation.org/. A useful website to check all R package, function definations.
+
+http://www.sthda.com/english/. This website provides a lot of examples for R packages. Especially for plot design. It contains many different examples for every single plot.
+
+https://www.machinelearningplus.com/. This website not only provide us many professional R packages example. It also explains a lot of statistics terminologies. 
